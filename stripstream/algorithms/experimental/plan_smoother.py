@@ -1,0 +1,2 @@
+# TODO - Run iterative weighted A* on the non-abstract problem to find a short solution given the current objects
+# Once we find a set of objects which is feasible, then we can optimize how we handle it
