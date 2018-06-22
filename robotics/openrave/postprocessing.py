@@ -112,6 +112,11 @@ def process_place(arm, g, m):
             open_gripper_trajectory(arm),
             m.rg_traj, m.ra_traj]
 
+def process_prepush(arm, g, m):
+    return [close_gripper_trajectory(arm),m.fa_traj, m.fg_traj,GrabCommand(arm, g.type, g)]
+
+
+
 def process_plan(arm, plan):
     # TODO: should this be a generator or not?
     # TODO: smooth these trajectories additionally
@@ -140,6 +145,9 @@ def process_plan(arm, plan):
         elif action.name == 'place':
             i, p, g, bq, m = args
             trajectories += process_place(arm, g, m)
+        elif action.name == 'prepush':
+            i, p, g, bq, m = args
+            trajectories += process_prepush(arm, g, m)
         else:
             raise ValueError(action.name)
     return trajectories

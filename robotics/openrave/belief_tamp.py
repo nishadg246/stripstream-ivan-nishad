@@ -16,7 +16,7 @@ from manipulation.motion.cspace import CSpace
 from manipulation.motion.trajectories import PathTrajectory
 from manipulation.primitives.look import look_at_point
 from robotics.openrave.belief_utils import COLORS, get_conf, set_conf, unit_from_theta, sample_surface_pose, \
-    is_surface_pose, get_top_grasps, get_side_grasps, APPROACH_LENGTH, Object, Surface, remove_except, ODE, \
+    is_surface_pose, get_top_grasps, get_prepush_setting, get_side_grasps, APPROACH_LENGTH, Object, Surface, remove_except, ODE, \
     is_point_on_surface
 from robotics.openrave.motion import mp_birrt, mp_straight_line
 from robotics.openrave.problems import WIDE_LEFT_ARM, RED
@@ -319,8 +319,12 @@ actions = [
            condition=And(OpenLHand(), Registered(I), AtPose(I, P), HandEmpty(), AtBConf(BQ),
                          IsKin(P, G, BQ, LT)),
            effect=And(Not(OpenLHand()), HasGrasp(I, G), Executable(),
+                      Not(AtPose(I, P)), Not(HandEmpty())), cost=PICK_PLACE_COST+1),
+    Action(name='prepush', parameters=[I, P, G, BQ, LT],  # TODO: Visibility constraint
+           condition=And(OpenLHand(), Registered(I), AtPose(I, P), HandEmpty(), AtBConf(BQ),
+                         IsKin(P, G, BQ, LT)),
+           effect=And(Not(OpenLHand()), HasGrasp(I, G), Executable(),
                       Not(AtPose(I, P)), Not(HandEmpty())), cost=PICK_PLACE_COST),
-
     Action(name='place', parameters=[I, P, G, BQ, LT],
            condition=And(Not(OpenLHand()), HasGrasp(I, G), AtBConf(BQ),
                          IsKin(P, G, BQ, LT)),
@@ -767,6 +771,24 @@ def get_ground_problem(arm, object_meshes, belief, goal_formula,
                 grasp.gripper_q = gq
                 yield (grasp,)
 
+    def prepush_generator(ty, max_grasps=1):
+      ################## write
+        if abstract_plan:
+            action, args = abstract_plan[0]
+            if action.name == 'pick':
+                i, s = args
+                if belief_from_name[i].type != ty: return
+            else: return
+
+        mesh = object_meshes[ty]
+        if ty in TOP_GRASPS:
+            for i, (g, gq) in enumerate(islice(get_prepush_setting(mesh), max_grasps)):
+                grasp = Grasp(g)
+                grasp.name = 'gtop{}'.format(i)
+                grasp.type = ty
+                grasp.gripper_q = gq
+                yield (grasp,)
+
     def manip_from_pose_grasp(pose, grasp):
         world_from_obj = trans_from_pose(pose.value)
         obj_from_gripper = np.linalg.inv(grasp.value)
@@ -905,10 +927,19 @@ def get_ground_problem(arm, object_meshes, belief, goal_formula,
     ####################
 
     cond_streams = []
-    if 'pick' in available_actions:
+    # if 'pick' in available_actions:
+    #   cond_streams += [
+    #       GeneratorStream(inputs=[C], outputs=[G], conditions=[IsItem(C)],
+    #                       effects=[IsGrasp(C, G)], generator=grasp_generator),
+
+    #       GeneratorStream(inputs=[C, P, G], outputs=[LT],
+    #                       conditions=[IsPose(C, P), IsGrasp(C, G)],
+    #                       effects=[IsKin(P, G, bq0, LT)], generator=manip_traj_from_base),
+    #   ]
+    if 'prepush' in available_actions:
       cond_streams += [
           GeneratorStream(inputs=[C], outputs=[G], conditions=[IsItem(C)],
-                          effects=[IsGrasp(C, G)], generator=grasp_generator),
+                          effects=[IsGrasp(C, G)], generator=prepush_generator),
 
           GeneratorStream(inputs=[C, P, G], outputs=[LT],
                           conditions=[IsPose(C, P), IsGrasp(C, G)],

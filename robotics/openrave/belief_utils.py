@@ -233,6 +233,24 @@ def get_top_grasps(mesh, under=False):
       rotate_z = trans_from_quat(quat_from_angle_vector(i*math.pi, [0, 0, 1]))
       yield translate.dot(rotate_z).dot(reflect_z), np.array([l])
 
+def get_prepush_setting(mesh, under=False):
+  ######## write
+  w, l, h = np.max(mesh.vertices, axis=0) - \
+            np.min(mesh.vertices, axis=0)
+  for j in range(1 + under):
+    swap_xz = trans_from_quat(quat_from_angle_vector(math.pi/2 + j*math.pi, [0, 1, 0]))
+    if w < MAX_GRASP_WIDTH:
+      translate = trans_from_point(0, 0, -2*l)
+      for i in range(2):
+        rotate_z = trans_from_quat(quat_from_angle_vector(math.pi / 2 + i * math.pi, [1, 0, 0]))
+        yield translate.dot(rotate_z).dot(swap_xz), np.array([w])
+    if l < MAX_GRASP_WIDTH:
+      translate = trans_from_point(0, 0, -2*l)
+      for i in range(2):
+        rotate_z = trans_from_quat(quat_from_angle_vector(i * math.pi, [1, 0, 0]))
+        yield translate.dot(rotate_z).dot(swap_xz), np.array([l])
+
+
 
 def get_side_grasps(mesh, under=False):
   w, l, h = np.max(mesh.vertices, axis=0) - \
