@@ -70,7 +70,7 @@ class Belief(object):
     return self.__class__.__name__ + repr((holding_type, self.surfaces, item_types))
 
 class Task(object):
-  def __init__(self, holding=False, object_surfaces=tuple(),
+  def __init__(self, holding=False, pushed=False,object_surfaces=tuple(),
                localized_items=tuple(), registered_items=tuple(),
                clustered_items=tuple(), left_items=tuple(),
                right_items=tuple()):
@@ -81,6 +81,7 @@ class Task(object):
     self.clustered_items = tuple(clustered_items)
     self.left_items = tuple(left_items)
     self.right_items = tuple(right_items)
+    self.pushed = pushed
   def __repr__(self):
     return self.__class__.__name__ + repr((self.holding, self.object_surfaces))
 
@@ -239,13 +240,13 @@ def get_prepush_setting(mesh, under=False):
             np.min(mesh.vertices, axis=0)
   for j in range(1 + under):
     swap_xz = trans_from_quat(quat_from_angle_vector(math.pi/2 + j*math.pi, [0, 1, 0]))
-    if w < MAX_GRASP_WIDTH:
-      translate = trans_from_point(0, 0, -2*l)
-      for i in range(2):
-        rotate_z = trans_from_quat(quat_from_angle_vector(math.pi / 2 + i * math.pi, [1, 0, 0]))
-        yield translate.dot(rotate_z).dot(swap_xz), np.array([w])
+    # if w < MAX_GRASP_WIDTH:
+    #   translate = trans_from_point(0, 0, -2*l)
+    #   for i in range(2):
+    #     rotate_z = trans_from_quat(quat_from_angle_vector(math.pi / 2 + i * math.pi, [1, 0, 0]))
+    #     yield translate.dot(rotate_z).dot(swap_xz), np.array([w])
     if l < MAX_GRASP_WIDTH:
-      translate = trans_from_point(0, 0, -2*l)
+      translate = trans_from_point(0, 0, l + GRASP_LENGTH)
       for i in range(2):
         rotate_z = trans_from_quat(quat_from_angle_vector(i * math.pi, [1, 0, 0]))
         yield translate.dot(rotate_z).dot(swap_xz), np.array([l])

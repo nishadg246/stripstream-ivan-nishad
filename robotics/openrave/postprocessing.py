@@ -113,7 +113,7 @@ def process_place(arm, g, m):
             m.rg_traj, m.ra_traj]
 
 def process_prepush(arm, g, m):
-    return [close_gripper_trajectory(arm),m.fa_traj, m.fg_traj,GrabCommand(arm, g.type, g)]
+    return [close_gripper_trajectory(arm),m.fa_traj, m.fg_traj,GrabCommand(arm, g.type, g),m.fpush_traj]
 
 
 
@@ -145,7 +145,7 @@ def process_plan(arm, plan):
         elif action.name == 'place':
             i, p, g, bq, m = args
             trajectories += process_place(arm, g, m)
-        elif action.name == 'prepush':
+        elif action.name == 'push':
             i, p, g, bq, m = args
             trajectories += process_prepush(arm, g, m)
         else:

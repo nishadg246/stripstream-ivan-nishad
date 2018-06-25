@@ -89,6 +89,19 @@ class Manipulation(object):
   def __repr__(self):
     return self.__class__.__name__ + '(%d)'%self.id
 
+class Manipulation2(object):
+  _ids = count(0)
+  def __init__(self, rg_traj, ra_traj, rpush_traj):
+    self.id = next(self._ids)
+    self.fa_traj = ra_traj.reverse()
+    self.fg_traj = rg_traj.reverse()
+    self.fpush_traj = rpush_traj.reverse()
+    self.rg_traj = rg_traj
+    self.ra_traj = ra_traj
+    self.rpush_traj = rpush_traj
+  def __repr__(self):
+    return self.__class__.__name__ + '(%d)'%self.id
+
 class Pose(object):
   _ids = count(0)
   def __init__(self, pose, ty):
@@ -283,6 +296,7 @@ ScanRoom = Func(CLASS)
 ScanTable = Func(SURFACE, CLASS)
 Distance = Func(BCONF, BCONF)
 
+Pushed = Pred(ITEM)
 Holding = Pred(ITEM)
 On = Pred(ITEM, SURFACE)
 RobotNear = Pred(SURFACE)
@@ -320,7 +334,7 @@ actions = [
                          IsKin(P, G, BQ, LT)),
            effect=And(Not(OpenLHand()), HasGrasp(I, G), Executable(),
                       Not(AtPose(I, P)), Not(HandEmpty())), cost=PICK_PLACE_COST+1),
-    Action(name='prepush', parameters=[I, P, G, BQ, LT],  # TODO: Visibility constraint
+    Action(name='push', parameters=[I, P, G, BQ, LT],  # TODO: Visibility constraint
            condition=And(OpenLHand(), Registered(I), AtPose(I, P), HandEmpty(), AtBConf(BQ),
                          IsKin(P, G, BQ, LT)),
            effect=And(Not(OpenLHand()), HasGrasp(I, G), Executable(),
@@ -441,6 +455,10 @@ def get_abstract_problem(arm, goal_formula, belief, belief_from_name, initial_tf
                condition=And(Holding(I)), # RobotNear(S)),
                effect=And(On(I, S), Not(Holding(I))),
                cost=PICK_PLACE_COST),
+        # Action(name='push', parameters=[I, S],
+        #        condition=And(On(I, S), Registered(I)), # RobotNear(S),
+        #        effect=And(Holding(I), Not(On(I, S))),
+        #        cost=PICK_PLACE_COST-1), 
         #Action(name='move_base', parameters=[S, S2],
         #       condition=RobotNear(S),
         #       effect=And(RobotNear(S2), Not(RobotNear(S)),
@@ -851,6 +869,79 @@ def get_ground_problem(arm, object_meshes, belief, goal_formula,
         lt = Manipulation(PathTrajectory(cspace, grasp_path), PathTrajectory(cspace, approach_path))
         yield (lt,)
 
+    def manip_traj_from_base_push(_, pose, grasp, base_q=bq0):
+        if Future in (type(pose), type(base_q)):
+            # Don't expect to be able to take arbitrary pose and base_q strings
+            return
+        target_point = point_from_pose(pose.value) if is_oriented(pose.value) else pose.value
+        if MAX_KIN_DISTANCE < length(base_q.value[:2] - target_point[:2]):
+            return
+        if not is_oriented(pose.value):
+            lt = Future(pose, grasp, base_q)
+            yield (lt,)
+            return
+        world_from_gripper = manip_from_pose_grasp(pose, grasp)
+        gripper_from_approach = trans_from_point(
+            *(-APPROACH_LENGTH) * arm.GetLocalToolDirection())
+        world_from_approach = world_from_gripper.dot(gripper_from_approach)
+
+        final_from_approach = trans_from_point(
+            *(APPROACH_LENGTH) * arm.GetLocalToolDirection())
+        world_from_final = world_from_gripper.dot(final_from_approach)
+
+
+        # TODO: remove poses of everything
+
+        # TODO: ensure that are grasps are tried by streams and streams don't end prematurely
+        # TODO: it seems like only one grasp is being tried...
+        #raw_input('awefawef')
+
+        cspace = CSpace.robot_manipulator(robot, arm.GetName())
+        with robot:
+            set_conf(robot, arm.GetName(), DEFAULT_LEFT_ARM)
+            if base_q == bq0:
+              # We make some ugly orientation approximations to be 2d pose
+              robot.SetTransform(world_from_robot0)
+            else:
+              set_conf(robot, 'base', base_q.value)
+            #env.UpdatePublishedBodies()
+            #raw_input('Continue?')
+            open_gripper(arm)
+            if env.CheckCollision(robot):
+                return
+            grasp_manip_q = solve_inverse_kinematics(arm, world_from_gripper)
+            if grasp_manip_q is None:
+                return
+            set_manipulator_conf(arm, grasp_manip_q)
+            approach_manip_q = solve_inverse_kinematics(
+                arm, world_from_approach)
+            if approach_manip_q is None:
+                return
+            final_manip_q = solve_inverse_kinematics(
+                arm, world_from_final)
+            if final_manip_q is None:
+                return
+
+            cspace.set_active()
+            # TODO: workspace plan here
+            grasp_path = mp_straight_line(
+                robot, grasp_manip_q, approach_manip_q)
+            if grasp_path is None:
+                return
+            approach_path = mp_birrt(
+                robot, approach_manip_q, DEFAULT_LEFT_ARM)
+            if approach_path is None:
+                return
+
+            push_path = mp_straight_line(
+                robot, final_manip_q, approach_manip_q)
+            if push_path is None:
+                return
+
+
+        lt = Manipulation2(PathTrajectory(cspace, grasp_path), PathTrajectory(cspace, approach_path), PathTrajectory(cspace, push_path))
+        yield (lt,)
+
     def manip_traj_from_pose_grasp(ty, pose, grasp, max_attempts=100, max_bqs=10):
         if (type(pose) is Future) or not is_oriented(pose.value):
             bq = Future(pose, grasp)
@@ -936,14 +1027,14 @@ def get_ground_problem(arm, object_meshes, belief, goal_formula,
     #                       conditions=[IsPose(C, P), IsGrasp(C, G)],
     #                       effects=[IsKin(P, G, bq0, LT)], generator=manip_traj_from_base),
     #   ]
-    if 'prepush' in available_actions:
+    if 'push' in available_actions:
       cond_streams += [
           GeneratorStream(inputs=[C], outputs=[G], conditions=[IsItem(C)],
                           effects=[IsGrasp(C, G)], generator=prepush_generator),
 
           GeneratorStream(inputs=[C, P, G], outputs=[LT],
                           conditions=[IsPose(C, P), IsGrasp(C, G)],
-                          effects=[IsKin(P, G, bq0, LT)], generator=manip_traj_from_base),
+                          effects=[IsKin(P, G, bq0, LT)], generator=manip_traj_from_base_push),
       ]
     if 'place' in available_actions:
       cond_streams += [
@@ -1003,6 +1094,9 @@ def get_goal_formula(task):
     elif task.holding is not False:
         goal_literals.append(
             Exists([I], And(IsClass(I, task.holding), Holding(I))))
+    elif task.pushed is not False:
+        goal_literals.append(
+            Exists([I], And(IsClass(I, task.pushed), Holding(I))))
     for item, surface in task.object_surfaces:
         goal_literals.append(
             Exists([I, S], And(IsClass(I, item), IsClass(S, surface), On(I, S))))
